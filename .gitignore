@@ -1,0 +1,17 @@
+# Build output and caches
+.gradle/
+.kotlin/
+build/
+*.apk
+*.aab
+captures/
+
+# Machine-specific
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Firebase project config: identifies your Firebase project. Keep it out of public
+# repos; without it the app still builds and runs with analytics switched off.
+app/google-services.json

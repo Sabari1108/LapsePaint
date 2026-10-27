@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A1A">
+
+    <com.lapsepaint.app.DrawingView
+        android:id="@+id/drawing"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="48dp" />
+
+    <!-- Top bar: workspace tools on the left, painting tools on the right -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="#F2262626"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp">
+
+        <TextView
+            android:id="@+id/btnGallery"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:background="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:text="Gallery"
+            android:textColor="#E8E8E8"
+            android:textSize="16sp" />
+
+        <ImageButton android:id="@+id/btnActions" style="@style/ToolCircle" android:contentDescription="Actions" android:src="@drawable/ic_actions" />
+        <ImageButton android:id="@+id/btnAdjust" style="@style/ToolCircle" android:contentDescription="Adjustments" android:src="@drawable/ic_adjust" />
+        <ImageButton android:id="@+id/btnSelect" style="@style/ToolCircle" android:contentDescription="Selection" android:src="@drawable/ic_select" />
+        <ImageButton android:id="@+id/btnTransform" style="@style/ToolCircle" android:contentDescription="Transform" android:src="@drawable/ic_transform" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="#BFBFBF"
+            android:textSize="14sp" />
+
+        <ImageButton android:id="@+id/btnBrush" style="@style/ToolIcon" android:contentDescription="Brush" android:src="@drawable/ic_brush" />
+        <ImageButton android:id="@+id/btnSmudge" style="@style/ToolIcon" android:contentDescription="Smudge" android:src="@drawable/ic_smudge" />
+        <ImageButton android:id="@+id/btnEraser" style="@style/ToolIcon" android:contentDescription="Eraser" android:src="@drawable/ic_eraser" />
+        <ImageButton android:id="@+id/btnLayers" style="@style/ToolIcon" android:contentDescription="Layers" android:src="@drawable/ic_layers" />
+
+        <View
+            android:id="@+id/btnColor"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Colour" />
+    </LinearLayout>
+
+    <!-- Sidebar: brush size, opacity, undo, redo -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="10dp"
+        android:layout_marginTop="24dp"
+        android:background="@drawable/panel_bg"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingVertical="10dp"
+        android:paddingHorizontal="4dp">
+
+        <com.lapsepaint.app.VerticalSlider
+            android:id="@+id/sizeSlider"
+            android:layout_width="36dp"
+            android:layout_height="190dp"
+            android:contentDescription="Brush size" />
+
+        <!-- Eyedropper: tap, then touch the canvas to pick a colour -->
+        <View
+            android:id="@+id/btnEyedropper"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginVertical="12dp"
+            android:contentDescription="Eyedropper" />
+
+        <com.lapsepaint.app.VerticalSlider
+            android:id="@+id/opacitySlider"
+            android:layout_width="36dp"
+            android:layout_height="190dp"
+            android:contentDescription="Brush opacity" />
+
+        <ImageButton android:id="@+id/btnUndo" style="@style/ToolIcon" android:layout_marginTop="8dp" android:contentDescription="Undo" android:src="@drawable/ic_undo" />
+        <ImageButton android:id="@+id/btnRedo" style="@style/ToolIcon" android:contentDescription="Redo" android:src="@drawable/ic_redo" />
+    </LinearLayout>
+</FrameLayout>
