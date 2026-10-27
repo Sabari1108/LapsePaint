@@ -1,7 +1,6 @@
 package com.lapsepaint.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
@@ -43,16 +42,15 @@ object UsageStats {
     /** Shows the one-time consent prompt, if Firebase is set up and the user hasn't answered yet. */
     fun askOnce(activity: Activity) {
         if (!isConfigured || hasAsked) return
-        AlertDialog.Builder(activity)
-            .setTitle("Help improve Lapse Paint?")
-            .setMessage(
-                "Share anonymous usage data: how long the app is used and which tools are used. " +
-                    "Your drawings and photos are never sent. You can change this any time in Actions.",
-            )
-            .setPositiveButton("Allow") { _, _ -> setEnabled(true) }
-            .setNegativeButton("No thanks") { _, _ -> setEnabled(false) }
-            .setCancelable(false)
-            .show()
+        activity.miuixConfirm(
+            "Help improve Lapse Paint?",
+            "Share anonymous usage data: how long the app is used and which tools are used. " +
+                "Your drawings and photos are never sent. You can change this any time in Actions.",
+            confirm = "Allow",
+            cancel = "No thanks",
+            cancelable = false,
+            onCancel = { setEnabled(false) },
+        ) { setEnabled(true) }
     }
 
     /** Logs an event. Values may be String, Int, Long, Double or Boolean. */

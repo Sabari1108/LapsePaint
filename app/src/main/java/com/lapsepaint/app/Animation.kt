@@ -1,7 +1,6 @@
 package com.lapsepaint.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -270,100 +269,43 @@ class AnimationTimeline(
         }
         options.add("Duplicate" to { drawing.duplicateFrame()?.let(flash) })
         options.add("Delete" to { drawing.deleteLayer(layer.id) })
-        AlertDialog.Builder(activity)
-            .setTitle(if (isBackground) "Background" else "Frame ${index + 1 - anim.firstFrame}")
-            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
-                options[which].second()
-                refresh()
-            }
-            .show()
+        activity.miuixMenu(
+            if (isBackground) "Background" else "Frame ${index + 1 - anim.firstFrame}",
+            options.map { (label, action) -> label to { action(); refresh() } },
+        )
     }
 
     /** How long a frame stays on screen, in playback ticks. */
     private fun showHold(layer: Layer) {
         val fps = drawing.artwork.animation.fps
-        val label = TextView(activity).apply { setTextColor(0xFFE8E8E8.toInt()) }
-        fun describe(hold: Int) {
-            val ms = (hold + 1) * 1000 / fps
-            label.text = "Shown for ${hold + 1} tick${if (hold == 0) "" else "s"} (${ms} ms at $fps fps)"
-        }
-        describe(layer.hold)
-        val bar = SeekBar(activity).apply {
-            max = 12
-            progress = layer.hold
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar, p: Int, fromUser: Boolean) {
-                    layer.hold = p
-                    describe(p)
-                }
-                override fun onStartTrackingTouch(bar: SeekBar) {}
-                override fun onStopTrackingTouch(bar: SeekBar) {}
-            })
-        }
-        AlertDialog.Builder(activity)
-            .setTitle("Hold frame")
-            .setView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(24), dp(12), dp(24), 0)
-                addView(label)
-                addView(bar)
-            })
-            .setPositiveButton("Done", null)
-            .setOnDismissListener { refresh() }
-            .show()
+        activity.miuixSliders(
+            "Hold frame",
+            listOf(SliderRow(0, 12, layer.hold, { hold ->
+                "Shown for ${hold + 1} tick${if (hold == 0) "" else "s"} (${(hold + 1) * 1000 / fps} ms at $fps fps)"
+            }) { layer.hold = it }),
+            onDone = { refresh() },
+        )
     }
 
     private fun chooseExport() {
         drawing.setPlaying(false)
-        AlertDialog.Builder(activity)
-            .setTitle("Export animation")
-            .setItems(arrayOf("MP4 video", "Animated GIF")) { _, which -> onExport(which == 1) }
-            .show()
+        activity.miuixMenu("Export animation", listOf(
+            "MP4 video" to { onExport(false) },
+            "Animated GIF" to { onExport(true) },
+        ))
     }
 
     private fun showSettings() {
         val anim = drawing.artwork.animation
-        fun row(label: String, min: Int, max: Int, value: Int, unit: String, onChange: (Int) -> Unit): View {
-            val text = TextView(activity).apply {
-                setTextColor(0xFFE8E8E8.toInt())
-                this.text = "$label: $value$unit"
-            }
-            val bar = SeekBar(activity).apply {
-                this.max = max - min
-                progress = value - min
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(bar: SeekBar, p: Int, fromUser: Boolean) {
-                        text.text = "$label: ${p + min}$unit"
-                        onChange(p + min)
-                        drawing.invalidate()
-                    }
-                    override fun onStartTrackingTouch(bar: SeekBar) {}
-                    override fun onStopTrackingTouch(bar: SeekBar) {}
-                })
-            }
-            return LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(8), 0, dp(4))
-                addView(text)
-                addView(bar)
-            }
-        }
-        val box = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(8), dp(24), 0)
-            addView(row("Frames per second", 1, 30, anim.fps, "") { anim.fps = it })
-            addView(row("Onion skin frames", 0, 5, anim.onionFrames, "") { anim.onionFrames = it })
-            addView(row("Onion skin opacity", 10, 90, (anim.onionOpacity * 100).toInt(), "%") { anim.onionOpacity = it / 100f })
-            addView(CheckBox(activity).apply {
-                text = "Ping-pong (play forwards, then backwards)"
-                isChecked = anim.pingPong
-                setOnCheckedChangeListener { _, checked -> anim.pingPong = checked }
-            })
-        }
-        AlertDialog.Builder(activity)
-            .setTitle("Animation settings")
-            .setView(box)
-            .setPositiveButton("Done", null)
-            .show()
+        fun changed(apply: (Int) -> Unit): (Int) -> Unit = { apply(it); drawing.invalidate() }
+        activity.miuixSliders(
+            "Animation settings",
+            listOf(
+                SliderRow(1, 30, anim.fps, { "Frames per second: $it" }, changed { anim.fps = it }),
+                SliderRow(0, 5, anim.onionFrames, { "Onion skin frames: $it" }, changed { anim.onionFrames = it }),
+                SliderRow(10, 90, (anim.onionOpacity * 100).toInt(), { "Onion skin opacity: $it%" }, changed { anim.onionOpacity = it / 100f }),
+            ),
+            listOf(SwitchRow("Ping-pong (play forwards, then backwards)", anim.pingPong) { anim.pingPong = it }),
+        )
     }
 }

@@ -1,8 +1,8 @@
 package com.lapsepaint.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ContentValues
+import androidx.activity.ComponentActivity
 import android.content.Intent
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -24,7 +24,7 @@ import android.widget.Toast
 import kotlin.concurrent.thread
 import kotlin.math.max
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var drawing: DrawingView
     private lateinit var status: TextView
@@ -334,10 +334,7 @@ class MainActivity : Activity() {
                 flash(if (UsageStats.isEnabled) "Sharing anonymous usage data" else "Usage data off")
             })
         }
-        AlertDialog.Builder(this)
-            .setTitle("Actions")
-            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
-            .show()
+        miuixMenu("Actions", actions)
     }
 
     private lateinit var timeline: AnimationTimeline
@@ -381,11 +378,9 @@ class MainActivity : Activity() {
     }
 
     private fun confirmClear() {
-        AlertDialog.Builder(this)
-            .setMessage("Clear every layer? This also clears the time-lapse recording.")
-            .setPositiveButton("Clear") { _, _ -> drawing.clearAll() }
-            .setNegativeButton("Cancel", null)
-            .show()
+        miuixConfirm("Clear canvas", "Clear every layer? This also clears the time-lapse recording.", "Clear") {
+            drawing.clearAll()
+        }
     }
 
     private fun savePng() {
@@ -585,10 +580,7 @@ class MainActivity : Activity() {
         }
         if (exporting) return
         val lengths = intArrayOf(15, 30, 60)
-        AlertDialog.Builder(this)
-            .setTitle("Time-lapse length")
-            .setItems(lengths.map { "$it seconds" }.toTypedArray()) { _, which -> exportTimelapse(lengths[which]) }
-            .show()
+        miuixMenu("Time-lapse length", lengths.map { "$it seconds" to { exportTimelapse(it) } })
     }
 
     private fun exportTimelapse(seconds: Int) {

@@ -1,7 +1,6 @@
 package com.lapsepaint.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -135,68 +134,28 @@ class LayersPanel(
     }
 
     private fun showOptions(layer: Layer) {
-        val options = arrayOf("Rename", "Opacity", "Move up", "Move down", "Clear", "Delete")
-        AlertDialog.Builder(activity)
-            .setTitle(layer.name)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> rename(layer)
-                    1 -> opacity(layer)
-                    2 -> drawing.moveLayer(layer.id, +1)
-                    3 -> drawing.moveLayer(layer.id, -1)
-                    4 -> drawing.clearLayer(layer.id)
-                    5 -> drawing.deleteLayer(layer.id)
-                }
-                refresh()
-            }
-            .show()
+        fun then(action: () -> Unit): () -> Unit = { action(); refresh() }
+        activity.miuixMenu(layer.name, listOf(
+            "Rename" to { rename(layer) },
+            "Opacity" to { opacity(layer) },
+            "Move up" to then { drawing.moveLayer(layer.id, +1) },
+            "Move down" to then { drawing.moveLayer(layer.id, -1) },
+            "Clear" to then { drawing.clearLayer(layer.id) },
+            "Delete" to then { drawing.deleteLayer(layer.id) },
+        ))
     }
 
-    private fun rename(layer: Layer) {
-        val input = EditText(activity).apply {
-            setText(layer.name)
-            setSelectAllOnFocus(true)
-        }
-        AlertDialog.Builder(activity)
-            .setTitle("Rename layer")
-            .setView(input)
-            .setPositiveButton("OK") { _, _ ->
-                layer.name = input.text.toString().ifBlank { layer.name }
-                refresh()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun rename(layer: Layer) = activity.miuixInput("Rename layer", layer.name) { name ->
+        layer.name = name.ifBlank { layer.name }
+        refresh()
     }
 
-    private fun opacity(layer: Layer) {
-        val label = TextView(activity).apply {
-            setTextColor(0xFFE8E8E8.toInt())
-            text = "${(layer.opacity * 100).toInt()}%"
-        }
-        val bar = SeekBar(activity).apply {
-            max = 100
-            progress = (layer.opacity * 100).toInt()
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
-                    layer.opacity = value / 100f
-                    label.text = "$value%"
-                    drawing.layersChanged()
-                }
-                override fun onStartTrackingTouch(bar: SeekBar) {}
-                override fun onStopTrackingTouch(bar: SeekBar) {}
-            })
-        }
-        val box = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(12), dp(24), 0)
-            addView(label)
-            addView(bar)
-        }
-        AlertDialog.Builder(activity)
-            .setTitle("${layer.name} opacity")
-            .setView(box)
-            .setPositiveButton("Done", null)
-            .setOnDismissListener { refresh() }
-            .show()
-    }
+    private fun opacity(layer: Layer) = activity.miuixSliders(
+        "${layer.name} opacity",
+        listOf(SliderRow(0, 100, (layer.opacity * 100).toInt(), { "$it%" }) {
+            layer.opacity = it / 100f
+            drawing.layersChanged()
+        }),
+        onDone = { refresh() },
+    )
 }

@@ -189,22 +189,17 @@ class AdjustmentsPanel(
 
     fun showMenu() {
         val layer = drawing.artwork.activeLayer
-        android.app.AlertDialog.Builder(activity)
-            .setTitle("Adjustments · ${layer.name}")
-            .setItems(arrayOf("Hue, Saturation, Brightness", "Gaussian Blur", "Invert colours")) { _, which ->
-                // Open the slider panel once the menu has finished closing; opened
-                // while the menu is still on screen, it gets closed along with it.
-                val later = { show: () -> Unit -> activity.window.decorView.postDelayed({ show() }, 250) }
-                when (which) {
-                    0 -> later { showHsb() }
-                    1 -> later { showBlur() }
-                    2 -> {
-                        drawing.applyAdjustment(Adjustment(Adjustment.INVERT))
-                        flash("Inverted ${layer.name}")
-                    }
-                }
-            }
-            .show()
+        // Open the slider panel once the menu has finished closing; opened
+        // while the menu is still on screen, it gets closed along with it.
+        val later = { show: () -> Unit -> activity.window.decorView.postDelayed({ show() }, 250) }
+        activity.miuixMenu("Adjustments · ${layer.name}", listOf(
+            "Hue, Saturation, Brightness" to { later { showHsb() } },
+            "Gaussian Blur" to { later { showBlur() } },
+            "Invert colours" to {
+                drawing.applyAdjustment(Adjustment(Adjustment.INVERT))
+                flash("Inverted ${layer.name}")
+            },
+        ))
     }
 
     private class Slider(val label: String, val min: Int, val max: Int, val start: Int, val unit: String)
