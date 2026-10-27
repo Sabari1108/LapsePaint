@@ -589,12 +589,24 @@ class DrawingView @JvmOverloads constructor(
         val ix = x.toInt()
         val iy = y.toInt()
         if (ix !in 0 until w || iy !in 0 until h) return null
-        val seen = snapshot() ?: return null
+        // Walls come from drawn lines only (all visible layers), so photos and earlier
+        // fills underneath don't break the area up. Lines are redrawn onto one scratch layer.
+        val linesOnly = PaintSurface(w, h)
+        val visible = artwork.layers.filter { it.visible }.map { it.id }.toSet()
+        for (st in artwork.history) {
+            if (st.image != null || st.adjustment != null || st.isSmudge || st.layerId !in visible) continue
+            val copy = Stroke(0, st.color, st.size, 1f, st.isEraser, st.brush, st.seed)
+            copy.points.addAll(st.points)
+            linesOnly.drawStroke(copy)
+        }
         val px = IntArray(w * h)
-        seen.getPixels(px, 0, w, 0, 0, w, h)
-        seen.recycle()
+        val lines = linesOnly.layerBitmap(0)
+        if (lines != null) lines.getPixels(px, 0, w, 0, 0, w, h)
+        linesOnly.clearAll()
 
-        // Pixels close to the tapped colour belong to the area (tolerance per channel).
+        // Tapping inside an outline fills the empty space it encloses. Tapping on a line
+        // itself fills that line's colour run instead.
+        val onLine = (px[iy * w + ix] ushr 24) >= 128
         val seed = px[iy * w + ix]
         val sr = (seed shr 16) and 0xFF
         val sg = (seed shr 8) and 0xFF
@@ -602,7 +614,10 @@ class DrawingView @JvmOverloads constructor(
         val tol = 48
         fun matches(i: Int): Boolean {
             val c = px[i]
-            return kotlin.math.abs(((c shr 16) and 0xFF) - sr) <= tol &&
+            val a = c ushr 24
+            if (!onLine) return a < 128
+            return a >= 128 &&
+                kotlin.math.abs(((c shr 16) and 0xFF) - sr) <= tol &&
                 kotlin.math.abs(((c shr 8) and 0xFF) - sg) <= tol &&
                 kotlin.math.abs((c and 0xFF) - sb) <= tol
         }
