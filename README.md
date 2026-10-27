@@ -2,9 +2,12 @@
 
 A drawing and animation app for Android tablets (built for the Xiaomi Pad 8 + Focus Pen), inspired by the workflow of iPad drawing apps, with automatic time-lapse recording. All code, icons and artwork are original.
 
-## What works (v1.5.1)
+## What works (v1.6)
 
-Procreate-style layout (own icons and code, nothing taken from Procreate):
+Procreate-style layout (own icons and code, nothing taken from Procreate). The Gallery and all
+menus and dialogs use [Miuix](https://github.com/miuix-kotlin-multiplatform/miuix) (HyperOS-style
+Jetpack Compose components); the canvas and drawing panels are plain Views for speed.
+
 
 - **Top bar:** Gallery, Actions, Adjustments, Selection, Transform on the left;
   Brush, Eraser, Layers and the colour dot on the right
