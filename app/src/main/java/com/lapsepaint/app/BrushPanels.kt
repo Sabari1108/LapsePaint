@@ -185,6 +185,58 @@ class BrushStudioPanel(
     private fun dp(v: Int) = (v * density).toInt()
     private val preview = ImageView(activity)
     private val sliders = ArrayList<Pair<BrushSetting, SeekBar>>()
+    private val choiceRefreshers = ArrayList<() -> Unit>()
+
+    /** A setting with a few named options (tip shape, angle), shown as a row of chips. */
+    private fun choiceRow(setting: BrushSetting): View {
+        val options = setting.choices!!
+        val chips = ArrayList<TextView>()
+        fun selected() = kotlin.math.round(setting.get(brush) * (options.size - 1)).toInt()
+        fun refresh() {
+            chips.forEachIndexed { i, chip ->
+                chip.background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(if (i == selected()) ACCENT_FILL else 0xFF2C2C2C.toInt())
+                }
+            }
+        }
+        val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        options.forEachIndexed { i, label ->
+            val chip = TextView(activity).apply {
+                text = label
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                setOnClickListener {
+                    brush = setting.set(brush, i / (options.size - 1).toFloat())
+                    refresh()
+                    updatePreview()
+                    BrushLibrary.update(activity, brush)
+                    onChanged(brush)
+                }
+            }
+            chips.add(chip)
+            row.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = dp(5)
+            })
+        }
+        refresh()
+        choiceRefreshers.add(::refresh)
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(6))
+            addView(TextView(activity).apply {
+                text = setting.label
+                textSize = 14f
+                setTextColor(TEXT)
+                setPadding(0, 0, 0, dp(5))
+            })
+            addView(android.widget.HorizontalScrollView(activity).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(row)
+            })
+        }
+    }
 
     fun show(anchor: View) {
         val title = TextView(activity).apply {
@@ -212,19 +264,17 @@ class BrushStudioPanel(
             orientation = LinearLayout.VERTICAL
             setPadding(0, 0, dp(14), 0)
         }
-        var section = ""
-        for (setting in BrushSetting.all) {
-            if (setting.section != section) {
-                section = setting.section
-                body.addView(TextView(activity).apply {
-                    text = section
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(MUTED)
-                    setPadding(0, dp(16), 0, dp(4))
-                })
+        for (section in BrushSetting.sections) {
+            body.addView(TextView(activity).apply {
+                text = section
+                textSize = 13f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(MUTED)
+                setPadding(0, dp(16), 0, dp(4))
+            })
+            for (setting in BrushSetting.all.filter { it.section == section }) {
+                body.addView(if (setting.choices != null) choiceRow(setting) else sliderRow(setting))
             }
-            body.addView(sliderRow(setting))
         }
 
         val content = LinearLayout(activity).apply {
@@ -245,6 +295,7 @@ class BrushStudioPanel(
         reset.setOnClickListener {
             brush = BrushLibrary.reset(activity, brush.id)
             for ((s, bar) in sliders) bar.progress = (s.get(brush) * 100).toInt()
+            for (refresh in choiceRefreshers) refresh()
             onChanged(brush)
             updatePreview()
         }

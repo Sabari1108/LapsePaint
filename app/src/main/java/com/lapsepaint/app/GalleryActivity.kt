@@ -66,9 +66,10 @@ class GalleryActivity : Activity() {
             clipToPadding = false
             selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             adapter = this@GalleryActivity.adapter
-            setOnItemClickListener { _, _, pos, _ -> open(items[pos].id) }
-            setOnItemLongClickListener { _, _, pos, _ ->
-                showOptions(items[pos])
+            // Open the artwork the card shows (its id is on the card), not "whatever is at this position now".
+            setOnItemClickListener { _, view, pos, _ -> open((view.tag as? String) ?: items[pos].id) }
+            setOnItemLongClickListener { _, view, pos, _ ->
+                showOptions(items.firstOrNull { it.id == view.tag } ?: items[pos])
                 true
             }
         }
@@ -162,6 +163,7 @@ class GalleryActivity : Activity() {
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val card = convertView as? LinearLayout ?: newCard()
+            card.tag = items[position].id
             val info = items[position]
             val image = card.getChildAt(0) as ImageView
             val name = card.getChildAt(1) as TextView

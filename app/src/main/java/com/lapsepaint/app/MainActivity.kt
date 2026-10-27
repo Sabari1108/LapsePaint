@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var btnBrush: ImageButton
     private lateinit var btnEraser: ImageButton
+    private var savedFingerprint = 0
     private lateinit var btnSmudge: ImageButton
 
     private enum class Tool { BRUSH, SMUDGE, ERASER }
@@ -65,6 +66,7 @@ class MainActivity : Activity() {
         val id = intent.getStringExtra(EXTRA_ARTWORK_ID) ?: ArtworkStore.newId()
         val saved = ArtworkStore.load(this, id)
         drawing.setArtwork(saved ?: Artwork(id))
+        savedFingerprint = if (saved != null) saved.fingerprint() else 0
         if (saved == null) UsageStats.log("artwork_created")
 
         for (id in intArrayOf(R.id.btnActions, R.id.btnAdjust, R.id.btnSelect, R.id.btnTransform, R.id.btnLayers)) {
@@ -177,8 +179,12 @@ class MainActivity : Activity() {
         // Leaving mid-transform cancels it, so a half-finished move is never saved.
         if (drawing.isTransforming) endTransform(apply = false)
         if (drawing.selecting) endSelection()
-        // Auto-save whenever you leave the canvas, like Procreate.
-        ArtworkStore.save(this, drawing.artwork, drawing.thumbnail(480))
+        // Auto-save whenever you leave the canvas, like Procreate - but only if something changed.
+        val now = drawing.artwork.fingerprint()
+        if (now != savedFingerprint) {
+            ArtworkStore.save(this, drawing.artwork, drawing.thumbnail(480))
+            savedFingerprint = now
+        }
     }
 
     private fun openGallery() {

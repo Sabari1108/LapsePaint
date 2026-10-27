@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brush category: textures (a leaf and spatter dots). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,20C4,11 10,5 20,4C19,14 13,20 4,20zM6.5,18.5L15,10" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M19,15a1.6,1.6 0,1 1,0 3.2a1.6,1.6 0,1 1,0 -3.2zM15.5,19a1.1,1.1 0,1 1,0 2.2a1.1,1.1 0,1 1,0 -2.2zM20.5,10.5a1,1 0,1 1,0 2a1,1 0,1 1,0 -2z" />
+</vector>

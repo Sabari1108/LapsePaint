@@ -97,7 +97,7 @@ class DrawingView @JvmOverloads constructor(
             artwork.width = w
             artwork.height = h
         }
-        surface = PaintSurface(artwork.width, artwork.height).also { it.rebuild(artwork) }
+        surface = PaintSurface(artwork.width, artwork.height, tiled = true).also { it.rebuild(artwork) }
         invalidate()
     }
 
@@ -486,7 +486,9 @@ class DrawingView @JvmOverloads constructor(
                 if (isPen || !penOnly) {
                     startStroke(ce, isPen, tool == MotionEvent.TOOL_TYPE_ERASER)
                 }
-                if (!isPen) {
+                // Press-and-hold eyedropper only with the brush: while erasing or smudging,
+                // a pause must never turn the tool into a brush that paints the picked colour.
+                if (!isPen && !eraser && !smudge) {
                     holdCanvasX = ce.x
                     holdCanvasY = ce.y
                     postDelayed(pickHold, 450)

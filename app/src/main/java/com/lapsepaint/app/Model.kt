@@ -105,6 +105,23 @@ class Artwork(val id: String) {
 
     val activeLayer get() = layer(activeLayerId) ?: layers.last()
 
+    /**
+     * A cheap fingerprint of everything that gets saved. Comparing it before and after
+     * a visit tells whether the artwork changed, so opening one doesn't re-save it
+     * (re-saving moves it to the top of the Gallery).
+     */
+    fun fingerprint(): Int {
+        var h = name.hashCode()
+        h = h * 31 + activeLayerId
+        for (l in layers) h = ((h * 31 + l.id) * 31 + l.name.hashCode()) * 31 + (l.opacity * 1000).toInt() +
+            (if (l.visible) 1 else 0) * 7 + l.hold * 13
+        h = h * 31 + history.size
+        for (s in history.takeLast(4)) h = h * 31 + System.identityHashCode(s)
+        val a = animation
+        h = h * 31 + listOf(a.enabled, a.fps, a.onionFrames, a.onionOpacity, a.pingPong, a.background).hashCode()
+        return h
+    }
+
     fun layer(id: Int) = layers.firstOrNull { it.id == id }
 
     /** Adds a layer directly above the active one and selects it. */
@@ -139,6 +156,7 @@ class Artwork(val id: String) {
             out.writeFloat(s.opacity)
             out.writeBoolean(s.isEraser)
             out.writeInt(s.seed)
+            out.writeInt(BrushSetting.all.size)
             for (setting in BrushSetting.all) out.writeFloat(setting.get(s.brush))
             out.writeInt(s.points.size)
             for (p in s.points) {
@@ -179,8 +197,11 @@ class Artwork(val id: String) {
         // 3: adds inserted photos. 4: adds layer adjustments. 5: adjustments hold any number of values.
         // 6: adds linked entries. 7: adds animation settings at the end.
         // 8: adds frame hold per layer and the background frame flag.
-        // 9: adds smudge strokes.
-        private const val FORMAT_VERSION = 9
+        // 9: adds smudge strokes. 10: brush settings are counted, so new ones can be added.
+        private const val FORMAT_VERSION = 10
+
+        /** Brush settings stored per stroke before format 10. */
+        private const val OLD_BRUSH_SETTINGS = 11
 
         fun read(id: String, input: DataInputStream, loadImage: (String) -> Bitmap?): Artwork {
             val version = input.readInt()
@@ -208,7 +229,11 @@ class Artwork(val id: String) {
                 var brush = BrushLibrary.classic
                 if (version >= 2) {
                     seed = input.readInt()
-                    for (setting in BrushSetting.all) brush = setting.set(brush, input.readFloat())
+                    val count = if (version >= 10) input.readInt() else OLD_BRUSH_SETTINGS
+                    for (i in 0 until count) {
+                        val v = input.readFloat()
+                        BrushSetting.all.getOrNull(i)?.let { brush = it.set(brush, v) }
+                    }
                 }
                 val stroke = Stroke(layerId, color, size, opacity, isEraser, brush, seed)
                 repeat(input.readInt()) {

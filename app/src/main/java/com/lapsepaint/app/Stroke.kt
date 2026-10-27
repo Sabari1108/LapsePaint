@@ -34,19 +34,29 @@ class StrokePainter {
     private val masks = HashMap<String, Bitmap>()
     private var filterColor = 0
     private var filter: PorterDuffColorFilter? = null
+    private val hsv = FloatArray(3)
+
+    /** Reads the colour already on a layer at a canvas position (for wet mixing); set by the surface. */
+    var sample: ((layerId: Int, x: Float, y: Float) -> Int)? = null
 
     // Walking state for the stroke being painted.
     private var active: Stroke? = null
     private var toNextDab = 0f
+    private var travelled = 0f
     private var random = Random(0)
 
-    private fun configure(stroke: Stroke, clearPixels: Boolean) {
-        val color = if (stroke.isEraser) Color.BLACK else stroke.color or 0xFF000000.toInt()
+    private fun baseColor(stroke: Stroke) = if (stroke.isEraser) Color.BLACK else stroke.color or 0xFF000000.toInt()
+
+    private fun setColor(color: Int) {
         if (filter == null || color != filterColor) {
             filterColor = color
             filter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
         }
         paint.colorFilter = filter
+    }
+
+    private fun configure(stroke: Stroke, clearPixels: Boolean) {
+        setColor(baseColor(stroke))
         paint.xfermode = if (clearPixels) erase else null
     }
 
@@ -62,20 +72,23 @@ class StrokePainter {
             active = stroke
             random = Random(stroke.seed)
             toNextDab = 0f
+            travelled = 0f
         }
         val c = pts[index]
         if (index == 0) {
-            dab(canvas, stroke, c.x, c.y, c.pressure, c.tilt)
+            dab(canvas, stroke, c.x, c.y, c.pressure, c.tilt, 0f, 0f, 0f)
             toNextDab = spacing(stroke, c.pressure)
             return
         }
         val b = pts[index - 1]
+        // Distance between pen samples stands in for speed (samples arrive at a steady rate).
+        val speed = hypot(c.x - b.x, c.y - b.y)
         val mx = (b.x + c.x) / 2f
         val my = (b.y + c.y) / 2f
         val mp = (b.pressure + c.pressure) / 2f
         val mt = (b.tilt + c.tilt) / 2f
         if (index == 1) {
-            walk(canvas, stroke, b.x, b.y, b.pressure, b.tilt, mx, my, mp, mt)
+            walk(canvas, stroke, b.x, b.y, b.pressure, b.tilt, mx, my, mp, mt, speed)
             return
         }
         val a = pts[index - 2]
@@ -97,7 +110,7 @@ class StrokePainter {
             val qy = u * u * sy + 2 * u * t * b.y + t * t * my
             val qp = sp + (mp - sp) * t
             val qt = st + (mt - st) * t
-            walk(canvas, stroke, px, py, pp, pt, qx, qy, qp, qt)
+            walk(canvas, stroke, px, py, pp, pt, qx, qy, qp, qt, speed)
             px = qx; py = qy; pp = qp; pt = qt
         }
     }
@@ -108,7 +121,8 @@ class StrokePainter {
         configure(stroke, clearPixels)
         val b = pts[pts.size - 2]
         val c = pts.last()
-        walk(canvas, stroke, (b.x + c.x) / 2f, (b.y + c.y) / 2f, (b.pressure + c.pressure) / 2f, (b.tilt + c.tilt) / 2f, c.x, c.y, c.pressure, c.tilt)
+        walk(canvas, stroke, (b.x + c.x) / 2f, (b.y + c.y) / 2f, (b.pressure + c.pressure) / 2f, (b.tilt + c.tilt) / 2f,
+            c.x, c.y, c.pressure, c.tilt, hypot(c.x - b.x, c.y - b.y))
     }
 
     /** Stamps dabs every "spacing" pixels along a straight piece, carrying the remainder over. */
@@ -116,17 +130,20 @@ class StrokePainter {
         canvas: Canvas, stroke: Stroke,
         x0: Float, y0: Float, p0: Float, t0: Float,
         x1: Float, y1: Float, p1: Float, t1: Float,
+        speed: Float,
     ) {
         val len = hypot(x1 - x0, y1 - y0)
         if (len <= 0f) return
+        val direction = Math.toDegrees(kotlin.math.atan2((y1 - y0).toDouble(), (x1 - x0).toDouble())).toFloat()
         var d = toNextDab
         while (d <= len) {
             val f = d / len
             val p = p0 + (p1 - p0) * f
-            dab(canvas, stroke, x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, p, t0 + (t1 - t0) * f)
+            dab(canvas, stroke, x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, p, t0 + (t1 - t0) * f, speed, direction, travelled + d)
             d += spacing(stroke, p)
         }
         toNextDab = d - len
+        travelled += len
     }
 
     private fun diameter(stroke: Stroke, pressure: Float, tilt: Float): Float {
@@ -138,21 +155,61 @@ class StrokePainter {
     private fun spacing(stroke: Stroke, pressure: Float) =
         max(0.5f, diameter(stroke, pressure, 0f) * stroke.brush.spacing)
 
-    private fun dab(canvas: Canvas, stroke: Stroke, x: Float, y: Float, pressure: Float, tilt: Float) {
+    private fun dab(
+        canvas: Canvas, stroke: Stroke, x: Float, y: Float, pressure: Float, tilt: Float,
+        speed: Float, direction: Float, distance: Float,
+    ) {
         val b = stroke.brush
-        // Always draw the same four random numbers so replays stay in step.
+        // Always draw the same random numbers for a given brush so replays stay in step.
         val jitter = random.nextFloat()
         val ox = random.nextFloat() * 2f - 1f
         val oy = random.nextFloat() * 2f - 1f
-        val rotation = random.nextFloat() * 360f
+        val spin = random.nextFloat() * 360f
+        val colourJitter = b.hueJitter > 0f || b.brightnessJitter > 0f
+        val hueShift = if (colourJitter) random.nextFloat() * 2f - 1f else 0f
+        val lightShift = if (colourJitter) random.nextFloat() * 2f - 1f else 0f
 
-        val dia = diameter(stroke, pressure, tilt) * (1f - b.sizeJitter * jitter * 0.8f)
+        var dia = diameter(stroke, pressure, tilt) * (1f - b.sizeJitter * jitter * 0.8f)
+        // Taper: the stroke swells in from a point over its first stretch.
+        if (b.taper > 0f) {
+            val taperLength = b.taper * stroke.size * 8f
+            val t = (distance / taperLength).coerceIn(0f, 1f)
+            dia *= 0.12f + 0.88f * (t * t * (3f - 2f * t))
+        }
+        // Speed: quick flicks thin the stroke.
+        if (b.velocitySize > 0f) {
+            dia *= 1f - b.velocitySize * (speed / (stroke.size * 1.5f)).coerceIn(0f, 0.75f)
+        }
         if (dia < 0.5f) return
         val alpha = b.flow * (1f + (pressure - 1f) * b.pressureOpacity) * (1f - b.tiltOpacity * tilt * 0.8f)
         val a = (alpha * 255).toInt()
         if (a <= 0) return
         paint.alpha = a.coerceAtMost(255)
 
+        if (!stroke.isEraser && (colourJitter || b.wetMix > 0f)) {
+            var c = stroke.color or 0xFF000000.toInt()
+            if (b.wetMix > 0f) {
+                // Wet paint: blend towards whatever colour is already under the dab.
+                val under = sample?.invoke(stroke.layerId, x, y) ?: 0
+                val ua = (under ushr 24) / 255f
+                if (ua > 0f) c = mix(c, under, b.wetMix * ua)
+            }
+            if (colourJitter) {
+                Color.colorToHSV(c, hsv)
+                hsv[0] = ((hsv[0] + hueShift * b.hueJitter * 90f) % 360f + 360f) % 360f
+                hsv[2] = (hsv[2] + lightShift * b.brightnessJitter * 0.45f).coerceIn(0f, 1f)
+                c = Color.HSVToColor(hsv)
+            }
+            setColor(c)
+        } else {
+            setColor(baseColor(stroke))
+        }
+
+        val rotation = when (b.angleIndex) {
+            1 -> direction
+            2 -> 45f
+            else -> spin
+        }
         val mask = maskFor(b, dia)
         val half = mask.width / 2f
         matrix.reset()
@@ -163,24 +220,82 @@ class StrokePainter {
         canvas.drawBitmap(mask, matrix, paint)
     }
 
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(s: Int) = (((a shr s) and 0xFF) * (1f - t) + ((b shr s) and 0xFF) * t).toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+    }
+
     /** Dab images at a few resolutions, so small dabs stay crisp instead of shimmering. */
+    private var lastMask: Bitmap? = null
+    private var lastTip = -1
+    private var lastSoftness = -1f
+    private var lastGrain = -1f
+    private var lastSize = -1
+
     private fun maskFor(brush: Brush, diameter: Float): Bitmap {
         var size = 8
         while (size < diameter && size < 256) size *= 2
-        val key = "${brush.softness}_${brush.grain}_$size"
-        return masks.getOrPut(key) { makeMask(size, brush.softness, brush.grain) }
+        val tip = brush.tipIndex
+        lastMask?.let {
+            if (size == lastSize && tip == lastTip && brush.softness == lastSoftness && brush.grain == lastGrain) return it
+        }
+        val key = "${tip}_${brush.softness}_${brush.grain}_$size"
+        val mask = masks.getOrPut(key) { makeMask(size, brush.softness, brush.grain, tip) }
+        lastMask = mask; lastTip = tip; lastSoftness = brush.softness; lastGrain = brush.grain; lastSize = size
+        return mask
     }
 
-    private fun makeMask(size: Int, softness: Float, grain: Float): Bitmap {
+    /**
+     * Builds one dab: white with the shape in the alpha channel. Each tip works out how
+     * far inside its shape a point is (in units of the dab's radius); the edge fades
+     * over [softness], then [grain] speckles it.
+     */
+    private fun makeMask(size: Int, softness: Float, grain: Float, tip: Int): Bitmap {
         val px = IntArray(size * size)
         val r = size / 2f
         val edge = max(1.5f / r, softness)
         val noise = Random(size * 31 + 7)
+        fun smooth(v: Float): Float {
+            val a = v.coerceIn(0f, 1f)
+            return a * a * (3f - 2f * a)
+        }
+        // Bristle and splatter tips are clusters of small round blobs at fixed spots.
+        class Blob(val x: Float, val y: Float, val r: Float, val a: Float)
+        val blobs = ArrayList<Blob>()
+        if (tip == 2 || tip == 3) {
+            val rnd = Random(if (tip == 2) 99 else 177)
+            val count = if (tip == 2) 26 else 12
+            repeat(count) {
+                val ang = rnd.nextFloat() * 2f * Math.PI.toFloat()
+                val dist = kotlin.math.sqrt(rnd.nextFloat()) * if (tip == 2) 0.78f else 0.85f
+                val br = if (tip == 2) 0.12f + rnd.nextFloat() * 0.1f else 0.05f + rnd.nextFloat() * 0.22f
+                blobs.add(Blob(kotlin.math.cos(ang) * dist, kotlin.math.sin(ang) * dist, br, 0.55f + rnd.nextFloat() * 0.45f))
+            }
+        }
         for (y in 0 until size) {
             for (x in 0 until size) {
-                val d = hypot(x + 0.5f - r, y + 0.5f - r) / r
-                var a = ((1f - d) / edge).coerceIn(0f, 1f)
-                a = a * a * (3f - 2f * a)
+                val u = (x + 0.5f - r) / r
+                val v = (y + 0.5f - r) / r
+                var a = when (tip) {
+                    1 -> { // Flat: a thin ellipse, like a chisel or calligraphy nib.
+                        val d = kotlin.math.sqrt(u * u + (v / 0.28f) * (v / 0.28f))
+                        smooth((1f - d) * 0.28f / max(edge * 0.28f, 1.5f / r))
+                    }
+                    2, 3 -> { // Bristle / splatter: the strongest blob covering this point.
+                        var best = 0f
+                        for (bl in blobs) {
+                            val inside = bl.r - hypot(u - bl.x, v - bl.y)
+                            val bEdge = max(1.5f / r, edge * bl.r)
+                            best = max(best, smooth(inside / bEdge) * bl.a)
+                        }
+                        best
+                    }
+                    4 -> { // Leaf: where two offset circles overlap, pointed at both ends.
+                        val inside = kotlin.math.min(1.15f - hypot(u, v - 0.6f), 1.15f - hypot(u, v + 0.6f))
+                        smooth(inside / max(edge * 0.5f, 1.5f / r))
+                    }
+                    else -> smooth((1f - hypot(u, v)) / edge) // Round
+                }
                 if (grain > 0f) a *= 1f - grain * noise.nextFloat() * 0.9f
                 px[y * size + x] = ((a * 255).toInt() shl 24) or 0xFFFFFF
             }
@@ -198,13 +313,58 @@ class StrokePainter {
  * Used both by the live canvas (scale 1) and the timelapse exporter
  * (scaled down to video size), so the video matches what you drew.
  */
-class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1f) {
+class PaintSurface(
+    val width: Int,
+    val height: Int,
+    private val scale: Float = 1f,
+    /** True for the on-screen canvas: draw changing bitmaps through [TileMirror]s. */
+    private val tiled: Boolean = false,
+) {
     private class LayerPixels(val bitmap: Bitmap, val canvas: Canvas, val pixels: Canvas)
 
     private val layerPixels = HashMap<Int, LayerPixels>()
     private val wet = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     private val wetCanvas = Canvas(wet).apply { scale(scale, scale) }
-    private val painter = StrokePainter()
+    private val wetMirror = if (tiled) TileMirror(wet) else null
+
+    // The layer being painted on gets a tile mirror; switching layers moves it.
+    private var hotLayerId = -1
+    private var hotMirror: TileMirror? = null
+
+    private fun mirrorFor(layerId: Int): TileMirror? {
+        if (!tiled) return null
+        if (hotLayerId != layerId || hotMirror == null) {
+            val bmp = layerPixels[layerId]?.bitmap ?: return null
+            hotLayerId = layerId
+            hotMirror = TileMirror(bmp)
+        }
+        return hotMirror
+    }
+
+    /** Something other than a dab changed this layer: refresh all of its tiles. */
+    private fun touchedAll(layerId: Int) {
+        if (layerId == hotLayerId) hotMirror?.markAll()
+    }
+
+    /** A dab of [stroke] near point [index] changed the layer (or the wet bitmap). */
+    private fun touched(stroke: Stroke, index: Int, wetToo: Boolean) {
+        if (!tiled || stroke.points.isEmpty()) return
+        val p = stroke.points[index.coerceIn(0, stroke.points.lastIndex)]
+        val b = stroke.brush
+        val reach = (stroke.size * (1f + b.scatter) * (1f + b.tiltSize * 1.5f) * 1.2f + 4f) * scale
+        val x = p.x * scale
+        val y = p.y * scale
+        if (wetToo) wetMirror?.mark(x - reach, y - reach, x + reach, y + reach)
+        else mirrorFor(stroke.layerId)?.mark(x - reach, y - reach, x + reach, y + reach)
+    }
+    private val painter = StrokePainter().also { p ->
+        p.sample = { layerId, x, y ->
+            val bmp = layerPixels[layerId]?.bitmap
+            val px = (x * scale).toInt()
+            val py = (y * scale).toInt()
+            if (bmp == null || px < 0 || py < 0 || px >= bmp.width || py >= bmp.height) 0 else bmp.getPixel(px, py)
+        }
+    }
     private val blend = Paint(Paint.FILTER_BITMAP_FLAG)
     private val dstOut = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
     private var wetStroke: Stroke? = null
@@ -241,14 +401,17 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
         if (index == 0 && stroke.opacity < 1f) startWet(stroke)
         if (wetStroke === stroke) {
             painter.drawSegment(wetCanvas, stroke, index, clearPixels = false)
+            touched(stroke, index, wetToo = true)
         } else {
             painter.drawSegment(pixelsFor(stroke.layerId).canvas, stroke, index, clearPixels = stroke.isEraser)
+            touched(stroke, index, wetToo = false)
         }
     }
 
     /** Moves an in-progress stroke to the wet bitmap and redraws it from scratch (used by QuickShape). */
     fun redrawWet(stroke: Stroke) {
         startWet(stroke)
+        wetMirror?.markAll()
         for (i in stroke.points.indices) painter.drawSegment(wetCanvas, stroke, i, clearPixels = false)
     }
 
@@ -300,6 +463,10 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
             val cy = smudgeY + (y - smudgeY) * f
             // Lighter pressure smudges more gently.
             smudgeDab(px.pixels, cx, cy, stroke.opacity * (0.35f + 0.65f * p.pressure))
+            if (tiled) {
+                val reach = carry!!.width.toFloat()
+                mirrorFor(stroke.layerId)?.mark(cx - reach, cy - reach, cx + reach, cy + reach)
+            }
             pickUp(px.bitmap, cx, cy, first = false)
             d += spacing
         }
@@ -336,9 +503,11 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
             painter.finish(wetCanvas, stroke, clearPixels = false)
             configureBlend(stroke)
             pixelsFor(stroke.layerId).pixels.drawBitmap(wet, 0f, 0f, blend)
+            touchedAll(stroke.layerId)
             dropWet()
         } else {
             painter.finish(pixelsFor(stroke.layerId).canvas, stroke, clearPixels = stroke.isEraser)
+            touched(stroke, stroke.points.lastIndex, wetToo = false)
         }
     }
 
@@ -350,13 +519,19 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
     fun dropWet() {
         wetStroke = null
         wet.eraseColor(Color.TRANSPARENT)
+        wetMirror?.markAll()
     }
 
     fun clearLayer(layerId: Int) {
         layerPixels[layerId]?.bitmap?.eraseColor(Color.TRANSPARENT)
+        touchedAll(layerId)
     }
 
     fun removeLayer(layerId: Int) {
+        if (layerId == hotLayerId) {
+            hotLayerId = -1
+            hotMirror = null
+        }
         layerPixels.remove(layerId)?.bitmap?.recycle()
     }
 
@@ -364,6 +539,7 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
     fun rebuildLayer(artwork: Artwork, layerId: Int) {
         clearLayer(layerId)
         for (s in artwork.history) if (s.layerId == layerId) drawStroke(s)
+        touchedAll(layerId)
     }
 
     /** A transform's matrix in this surface's pixels (the surface may be scaled down). */
@@ -376,6 +552,11 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
     private fun applyAdjustment(layerId: Int, adj: Adjustment) {
+        applyAdjustmentPixels(layerId, adj)
+        touchedAll(layerId)
+    }
+
+    private fun applyAdjustmentPixels(layerId: Int, adj: Adjustment) {
         if (adj.type == Adjustment.FILL) {
             fillPaint.color = adj.fillColor
             pixelsFor(layerId).canvas.drawPath(adj.selectionPath(), fillPaint)
@@ -496,6 +677,7 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
     }
 
     fun clearAll() {
+        hotMirror?.markAll()
         for (p in layerPixels.values) p.bitmap.eraseColor(Color.TRANSPARENT)
         dropWet()
     }
@@ -545,6 +727,11 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
         canvas.drawBitmap(bmp, 0f, 0f, ghostPaint)
     }
 
+    private fun drawLayerBitmap(canvas: Canvas, layerId: Int, bmp: Bitmap, paint: Paint?) {
+        val m = if (layerId == hotLayerId) hotMirror else null
+        if (m != null) m.draw(canvas, paint) else canvas.drawBitmap(bmp, 0f, 0f, paint)
+    }
+
     private fun drawLayer(canvas: Canvas, layer: Layer) {
         val bmp = layerPixels[layer.id]?.bitmap
         val wetHere = wetStroke?.takeIf { it.layerId == layer.id }
@@ -568,18 +755,68 @@ class PaintSurface(val width: Int, val height: Int, private val scale: Float = 1
             return
         }
         if (wetHere == null && layer.opacity >= 1f) {
-            bmp?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+            bmp?.let { drawLayerBitmap(canvas, layer.id, it, null) }
             return
         }
         if (bmp == null && wetHere == null) return
         // Isolate the layer so its opacity applies once, and a wet eraser cuts only this layer.
         val alpha = (layer.opacity * 255).toInt().coerceIn(0, 255)
         val save = canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), alpha)
-        bmp?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        bmp?.let { drawLayerBitmap(canvas, layer.id, it, null) }
         wetHere?.let {
             configureBlend(it)
-            canvas.drawBitmap(wet, 0f, 0f, blend)
+            val wm = wetMirror
+            if (wm != null) wm.draw(canvas, blend) else canvas.drawBitmap(wet, 0f, 0f, blend)
         }
         canvas.restoreToCount(save)
+    }
+}
+
+/**
+ * Keeps a tiled copy of a bitmap that is being painted on, for drawing to the screen.
+ * The GPU re-uploads a whole bitmap whenever it changes; a full-screen layer is ~25 MB,
+ * which made drawing lag. Here only the tiles a dab touched are re-copied and re-uploaded.
+ */
+class TileMirror(private val source: Bitmap, private val tile: Int = 256) {
+    private val cols = (source.width + tile - 1) / tile
+    private val rows = (source.height + tile - 1) / tile
+    private val tiles = arrayOfNulls<Bitmap>(cols * rows)
+    private val dirty = BooleanArray(cols * rows) { true }
+    private val copyPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
+    private val src = android.graphics.Rect()
+    private val dst = android.graphics.Rect()
+
+    fun markAll() = dirty.fill(true)
+
+    /** Marks the tiles under a rectangle in the source's pixels. */
+    fun mark(left: Float, top: Float, right: Float, bottom: Float) {
+        val c0 = (left.toInt() / tile).coerceIn(0, cols - 1)
+        val c1 = (right.toInt() / tile).coerceIn(0, cols - 1)
+        val r0 = (top.toInt() / tile).coerceIn(0, rows - 1)
+        val r1 = (bottom.toInt() / tile).coerceIn(0, rows - 1)
+        for (r in r0..r1) for (c in c0..c1) dirty[r * cols + c] = true
+    }
+
+    fun draw(canvas: Canvas, paint: Paint?) {
+        for (r in 0 until rows) for (c in 0 until cols) {
+            val i = r * cols + c
+            val x = c * tile
+            val y = r * tile
+            val w = minOf(tile, source.width - x)
+            val h = minOf(tile, source.height - y)
+            var t = tiles[i]
+            if (t == null) {
+                t = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                tiles[i] = t
+                dirty[i] = true
+            }
+            if (dirty[i]) {
+                src.set(x, y, x + w, y + h)
+                dst.set(0, 0, w, h)
+                Canvas(t).drawBitmap(source, src, dst, copyPaint)
+                dirty[i] = false
+            }
+            canvas.drawBitmap(t, x.toFloat(), y.toFloat(), paint)
+        }
     }
 }

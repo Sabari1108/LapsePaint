@@ -23,7 +23,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Lite build: R8 strips unused code and renames what's left; unused resources are dropped.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Signed with the local debug key so it can be installed directly (not for the Play Store).
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
