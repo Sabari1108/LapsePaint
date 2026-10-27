@@ -33,7 +33,8 @@ class MainActivity : Activity() {
     private var savedFingerprint = 0
     private lateinit var btnSmudge: ImageButton
 
-    private enum class Tool { BRUSH, SMUDGE, ERASER }
+    private enum class Tool { BRUSH, SMUDGE, ERASER, FILL }
+    private lateinit var btnFill: ImageButton
     private var tool = Tool.BRUSH
     private lateinit var btnUndo: ImageButton
     private lateinit var btnRedo: ImageButton
@@ -59,6 +60,13 @@ class MainActivity : Activity() {
         btnBrush = findViewById(R.id.btnBrush)
         btnEraser = findViewById(R.id.btnEraser)
         btnSmudge = findViewById(R.id.btnSmudge)
+        btnFill = findViewById(R.id.btnFill)
+        btnFill.setOnClickListener {
+            if (tool != Tool.FILL) {
+                setTool(Tool.FILL)
+                flash("Fill: tap inside a shape to fill it with the current colour")
+            }
+        }
         btnUndo = findViewById(R.id.btnUndo)
         btnRedo = findViewById(R.id.btnRedo)
         btnColor = findViewById(R.id.btnColor)
@@ -221,6 +229,8 @@ class MainActivity : Activity() {
         tool = t
         drawing.eraser = t == Tool.ERASER
         drawing.smudge = t == Tool.SMUDGE
+        drawing.fill = t == Tool.FILL
+        btnFill.setColorFilter(if (t == Tool.FILL) accent else iconIdle)
         btnBrush.setColorFilter(if (t == Tool.BRUSH) accent else iconIdle)
         btnSmudge.setColorFilter(if (t == Tool.SMUDGE) accent else iconIdle)
         btnEraser.setColorFilter(if (t == Tool.ERASER) accent else iconIdle)

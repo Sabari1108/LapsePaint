@@ -2,7 +2,7 @@
 
 A drawing and animation app for Android tablets (built for the Xiaomi Pad 8 + Focus Pen), inspired by the workflow of iPad drawing apps, with automatic time-lapse recording. All code, icons and artwork are original.
 
-## What works (v1.4)
+## What works (v1.5)
 
 Procreate-style layout (own icons and code, nothing taken from Procreate):
 
@@ -30,6 +30,8 @@ Procreate-style layout (own icons and code, nothing taken from Procreate):
   handles, rotate handle, or two-finger pinch/twist); Flip, Rotate 90°, Reset, Cancel, Done
 - **Adjustments (magic wand):** Hue/Saturation/Brightness/Contrast, Gaussian Blur,
   Invert, on the selected layer, with live preview, undo and time-lapse support
+- **Fill (paint bucket):** tap inside a closed shape to fill it with the current colour
+  (edges come from all visible layers; fills the selected layer; undoable)
 - **Smudge (finger icon):** drags paint already on the layer; opacity slider = strength
 - **Brush engine:** textured dabs stamped along the stroke, following pressure and tilt
 - **Brush Library:** categories (Sketching, Inking, Painting, Airbrushing) beside the

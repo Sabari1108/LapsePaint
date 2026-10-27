@@ -44,6 +44,9 @@ class DrawingView @JvmOverloads constructor(
     var eraser = false
     var smudge = false
 
+    /** Fill tool: a tap fills the enclosed area with [brushColor]. */
+    var fill = false
+
     /** When true, fingers never draw: only the pen does. */
     var penOnly = false
 
@@ -466,6 +469,10 @@ class DrawingView @JvmOverloads constructor(
             selectionTouch(e, ce)
             return
         }
+        if (fill) {
+            fillTouch(e, ce)
+            return
+        }
         if (picking || (eyedropperArmed && e.actionMasked == MotionEvent.ACTION_DOWN)) {
             pickTouch(e, ce)
             return
@@ -529,6 +536,151 @@ class DrawingView @JvmOverloads constructor(
                 cancelStroke()
             }
         }
+    }
+
+    // ---- Fill ----
+
+    private fun fillTouch(e: MotionEvent, ce: MotionEvent) {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                gestureStart = e.eventTime
+                gestureMoved = false
+                maxPointers = 1
+                downX = e.x
+                downY = e.y
+                holdCanvasX = ce.x
+                holdCanvasY = ce.y
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                maxPointers = max(maxPointers, e.pointerCount)
+                if (e.pointerCount == 2) beginNavigate(e)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (hypot(e.x - downX, e.y - downY) > touchSlop) gestureMoved = true
+                if (e.pointerCount >= 2) navigate(e)
+            }
+            MotionEvent.ACTION_POINTER_UP -> endNavigate(e)
+            MotionEvent.ACTION_UP -> {
+                if (navigating) {
+                    endNavigate(e)
+                } else if (!gestureMoved && maxPointers == 1) {
+                    fillAt(holdCanvasX, holdCanvasY)?.let { onMessage?.invoke(it) }
+                } else if (!gestureMoved && e.eventTime - gestureStart < 350) {
+                    when (maxPointers) {
+                        2 -> undo()
+                        3 -> redo()
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Fills the area around a canvas point with [brushColor], on the selected layer.
+     * The edges come from everything visible (lines on any layer stop the fill). The
+     * result is kept as an image placed on the layer, so undo, saving and the
+     * time-lapse replay it exactly. Returns a message to show, or null.
+     */
+    fun fillAt(x: Float, y: Float): String? {
+        val layer = artwork.activeLayer
+        if (!layer.visible) return "${layer.name} is hidden"
+        val w = artwork.width
+        val h = artwork.height
+        val ix = x.toInt()
+        val iy = y.toInt()
+        if (ix !in 0 until w || iy !in 0 until h) return null
+        val seen = snapshot() ?: return null
+        val px = IntArray(w * h)
+        seen.getPixels(px, 0, w, 0, 0, w, h)
+        seen.recycle()
+
+        // Pixels close to the tapped colour belong to the area (tolerance per channel).
+        val seed = px[iy * w + ix]
+        val sr = (seed shr 16) and 0xFF
+        val sg = (seed shr 8) and 0xFF
+        val sb = seed and 0xFF
+        val tol = 48
+        fun matches(i: Int): Boolean {
+            val c = px[i]
+            return kotlin.math.abs(((c shr 16) and 0xFF) - sr) <= tol &&
+                kotlin.math.abs(((c shr 8) and 0xFF) - sg) <= tol &&
+                kotlin.math.abs((c and 0xFF) - sb) <= tol
+        }
+
+        // Scanline flood fill.
+        val inside = BooleanArray(w * h)
+        var stack = IntArray(1024)
+        var top = 0
+        fun push(i: Int) {
+            if (top == stack.size) stack = stack.copyOf(stack.size * 2)
+            stack[top++] = i
+        }
+        push(iy * w + ix)
+        var minX = w; var minY = h; var maxX = -1; var maxY = -1
+        while (top > 0) {
+            val i = stack[--top]
+            if (inside[i] || !matches(i)) continue
+            val row = i / w
+            var l = i % w
+            var r = l
+            while (l > 0 && !inside[row * w + l - 1] && matches(row * w + l - 1)) l--
+            while (r < w - 1 && !inside[row * w + r + 1] && matches(row * w + r + 1)) r++
+            for (cx in l..r) inside[row * w + cx] = true
+            if (l < minX) minX = l
+            if (r > maxX) maxX = r
+            if (row < minY) minY = row
+            if (row > maxY) maxY = row
+            for (ny in intArrayOf(row - 1, row + 1)) {
+                if (ny !in 0 until h) continue
+                var cx = l
+                while (cx <= r) {
+                    val j = ny * w + cx
+                    if (!inside[j] && matches(j)) {
+                        push(j)
+                        // Skip the rest of this run; the pushed seed will cover it.
+                        while (cx <= r && !inside[ny * w + cx] && matches(ny * w + cx)) cx++
+                    } else {
+                        cx++
+                    }
+                }
+            }
+        }
+        if (maxX < 0) return null
+
+        // Grow the area by a pixel so it tucks under soft line edges (no white halo).
+        val grow = 2
+        minX = (minX - grow).coerceAtLeast(0); minY = (minY - grow).coerceAtLeast(0)
+        maxX = (maxX + grow).coerceAtMost(w - 1); maxY = (maxY + grow).coerceAtMost(h - 1)
+        val bw = maxX - minX + 1
+        val bh = maxY - minY + 1
+        val out = IntArray(bw * bh)
+        val colour = brushColor or 0xFF000000.toInt()
+        for (yy in 0 until bh) {
+            for (xx in 0 until bw) {
+                val gx = minX + xx
+                val gy = minY + yy
+                var hit = false
+                loop@ for (dy in -grow..grow) for (dx in -grow..grow) {
+                    val qx = gx + dx
+                    val qy = gy + dy
+                    if (qx in 0 until w && qy in 0 until h && inside[qy * w + qx]) { hit = true; break@loop }
+                }
+                if (hit) out[yy * bw + xx] = colour
+            }
+        }
+        val bmp = Bitmap.createBitmap(out, bw, bh, Bitmap.Config.ARGB_8888)
+        val file = ArtworkStore.saveImage(context, artwork.id, bmp)
+        val stroke = Stroke(layer.id, colour, 1f, 1f, false, brush, 0)
+        val rect = RectF(minX.toFloat(), minY.toFloat(), (maxX + 1).toFloat(), (maxY + 1).toFloat())
+        stroke.image = PlacedImage(file, bmp, rect)
+        stroke.points.add(StrokePoint(rect.centerX(), rect.centerY(), 1f))
+        surface?.drawStroke(stroke)
+        artwork.history.add(stroke)
+        redoStack.clear()
+        invalidate()
+        onHistoryChanged?.invoke()
+        onColorUsed?.invoke(colour)
+        return null
     }
 
     // ---- Eyedropper ----

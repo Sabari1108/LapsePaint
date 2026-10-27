@@ -47,6 +47,7 @@
         <ImageButton android:id="@+id/btnBrush" style="@style/ToolIcon" android:contentDescription="Brush" android:src="@drawable/ic_brush" />
         <ImageButton android:id="@+id/btnSmudge" style="@style/ToolIcon" android:contentDescription="Smudge" android:src="@drawable/ic_smudge" />
         <ImageButton android:id="@+id/btnEraser" style="@style/ToolIcon" android:contentDescription="Eraser" android:src="@drawable/ic_eraser" />
+        <ImageButton android:id="@+id/btnFill" style="@style/ToolIcon" android:contentDescription="Fill" android:src="@drawable/ic_fill" />
         <ImageButton android:id="@+id/btnLayers" style="@style/ToolIcon" android:contentDescription="Layers" android:src="@drawable/ic_layers" />
 
         <View

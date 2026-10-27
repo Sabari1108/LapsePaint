@@ -17,8 +17,8 @@ android {
         applicationId = "com.lapsepaint.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.4"
+        versionCode = 3
+        versionName = "1.5"
     }
 
     buildTypes {
